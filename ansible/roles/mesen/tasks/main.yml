@@ -92,7 +92,7 @@
       - tar
       - gzip
       - unzip
-      - curl
+      # AL2023 ships curl-minimal; requesting curl conflicts with it.
       - which
       - libX11
       - libXext

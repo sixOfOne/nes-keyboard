@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import json
 import platform
 import shlex
@@ -19,6 +20,24 @@ except ImportError:  # pragma: no cover - optional until deps installed
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_GAMES = REPO_ROOT / "config" / "games.yaml"
+
+# MesenCE systems supported by play --system (snes/gba reserved for future ROMs).
+SYSTEMS = ("nes", "gb", "snes", "gba")
+EXT_TO_SYSTEM = {
+    ".nes": "nes",
+    ".fds": "nes",
+    ".nsf": "nes",
+    ".unf": "nes",
+    ".unif": "nes",
+    ".gb": "gb",
+    ".gbc": "gb",
+    ".sgb": "gb",
+    ".sfc": "snes",
+    ".smc": "snes",
+    ".fig": "snes",
+    ".swc": "snes",
+    ".gba": "gba",
+}
 
 # AWS / remote play defaults
 SSH_USER = "ec2-user"
@@ -48,7 +67,7 @@ VNC_AUDIO_LOG = Path.home() / ".cache" / "nes-kickoff" / "vnc-audio.log"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Keyboard-controlled NES kickoff")
+    parser = argparse.ArgumentParser(description="Keyboard-controlled NES / Game Boy kickoff (MesenCE)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("up", help="placeholder: start the local smoke path")
@@ -79,11 +98,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="print the Ansible command only"
     )
 
-    play = subparsers.add_parser("play", help="launch Mesen with a ROM")
+    play = subparsers.add_parser(
+        "play", help="launch Mesen with a ROM (NES, Game Boy, …)"
+    )
+    play.add_argument(
+        "--system",
+        choices=list(SYSTEMS),
+        default=None,
+        help=(
+            "console system (nes|gb|snes|gba). "
+            "If omitted, infer from ROM extension or games.yaml"
+        ),
+    )
     play.add_argument(
         "rom",
         nargs="?",
-        help="ROM path (absolute, relative to repo, or a game name from config/games.yaml)",
+        help=(
+            "game name from config/games.yaml or ROM path; "
+            "if omitted, pick default for --system (or first games.yaml entry)"
+        ),
     )
     play.add_argument(
         "--target",
@@ -139,44 +172,123 @@ def build_parser() -> argparse.ArgumentParser:
 def load_games_config() -> list:
     if not DEFAULT_GAMES.is_file():
         return []
-    text = DEFAULT_GAMES.read_text(encoding="utf-8")
+    raw = DEFAULT_GAMES.read_text(encoding="utf-8")
     if yaml is not None:
-        data = yaml.safe_load(text) or {}
+        data = yaml.safe_load(raw) or {}
         return list(data.get("games") or [])
     games = []
     current = None
-    for line in text.splitlines():
+    quote_chars = chr(34) + chr(39)  # " and '
+
+    def _val(line: str) -> str:
+        return line.split(":", 1)[1].strip().strip(quote_chars)
+
+    for line in raw.splitlines():
         stripped = line.strip()
         if stripped.startswith("- name:"):
             if current:
                 games.append(current)
-            current = {"name": stripped.split(":", 1)[1].strip().strip("\"'" )}
+            current = {"name": _val(stripped)}
         elif stripped.startswith("rom:") and current is not None:
-            current["rom"] = stripped.split(":", 1)[1].strip().strip("\"'" )
+            current["rom"] = _val(stripped)
+        elif stripped.startswith("system:") and current is not None:
+            current["system"] = _val(stripped)
     if current:
         games.append(current)
     return games
 
 
-def resolve_rom(rom_arg):
+
+
+def normalize_system(value: str | None) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip().lower()
+    if not s:
+        return None
+    aliases = {"gameboy": "gb", "game boy": "gb", "game_boy": "gb"}
+    s = aliases.get(s, s)
+    if s not in SYSTEMS:
+        raise SystemExit(
+            f"Unknown system {value!r}. Choose one of: {', '.join(SYSTEMS)}"
+        )
+    return s
+
+
+def infer_system_from_path(path: Path) -> str | None:
+    return EXT_TO_SYSTEM.get(path.suffix.lower())
+
+
+def _game_name_key(name: str) -> str:
+    return re.sub(r"[\s_]+", "", name.lower())
+
+
+def _games_for_system(games: list, system: str | None) -> list:
+    if system is None:
+        return list(games)
+    out = []
+    for g in games:
+        gs = normalize_system(str(g.get("system") or "") or None)
+        if gs == system:
+            out.append(g)
+    return out
+
+
+def resolve_rom(rom_arg, system: str | None = None) -> Path:
+    """Resolve a ROM path from optional --system and game name / path."""
+    system = normalize_system(system)
     games = load_games_config()
+    matched_game = None
+
     if rom_arg is None:
-        if not games:
+        candidates = _games_for_system(games, system)
+        if not candidates:
+            if system:
+                raise SystemExit(
+                    f"No ROM given and no games.yaml entry for system={system}. "
+                    "Pass a ROM path or add an entry under games:."
+                )
             raise SystemExit(
                 "No ROM given and config/games.yaml has no games. "
                 "Pass a ROM path or add an entry under games:."
             )
-        rom_arg = str(games[0].get("rom") or "")
+        matched_game = candidates[0]
+        rom_arg = str(matched_game.get("rom") or "")
         if not rom_arg:
-            raise SystemExit("First games.yaml entry is missing a rom: path.")
+            raise SystemExit("Chosen games.yaml entry is missing a rom: path.")
+        if system is None:
+            system = normalize_system(str(matched_game.get("system") or "") or None)
     else:
+        key = _game_name_key(str(rom_arg))
         for game in games:
-            name = str(game.get("name") or "").lower()
-            if name and name == rom_arg.lower():
-                rom_arg = str(game.get("rom") or "")
-                break
+            name = str(game.get("name") or "")
+            if not name:
+                continue
+            if name.lower() != str(rom_arg).lower() and _game_name_key(name) != key:
+                continue
+            game_sys = normalize_system(str(game.get("system") or "") or None)
+            if system is not None and game_sys is not None and game_sys != system:
+                continue
+            matched_game = game
+            break
+        if matched_game is not None:
+            rom_arg = str(matched_game.get("rom") or "")
+            if not rom_arg:
+                raise SystemExit(
+                    f"games.yaml entry {matched_game.get('name')!r} is missing rom:."
+                )
+            game_sys = normalize_system(
+                str(matched_game.get("system") or "") or None
+            )
+            if system is None:
+                system = game_sys
+            elif game_sys is not None and game_sys != system:
+                raise SystemExit(
+                    f"Game {matched_game.get('name')!r} is system="
+                    f"{matched_game.get('system')}, not --system {system}."
+                )
 
-    path = Path(rom_arg).expanduser()
+    path = Path(str(rom_arg)).expanduser()
     if not path.is_absolute():
         path = (REPO_ROOT / path).resolve()
     else:
@@ -186,6 +298,24 @@ def resolve_rom(rom_arg):
         raise SystemExit(f"ROM not found: {path}")
     if path.stat().st_size <= 0:
         raise SystemExit(f"ROM is empty: {path}")
+
+    inferred = infer_system_from_path(path)
+    if system is None:
+        system = inferred
+    elif inferred is not None and inferred != system:
+        print(
+            f"Warning: --system {system} but ROM extension suggests {inferred} "
+            f"({path.name})",
+            file=sys.stderr,
+        )
+
+    label = (
+        str(matched_game.get("name"))
+        if matched_game and matched_game.get("name")
+        else path.name
+    )
+    if system:
+        print(f"System: {system}  Game: {label}")
     return path
 
 
@@ -593,9 +723,10 @@ def cmd_play_aws(
     foreground: bool,
     ssh_key: str,
     audio: str = AUDIO_AUTO,
+    system: str | None = None,
 ) -> int:
     audio = _validate_audio_mode(audio)
-    rom = resolve_rom(rom_arg)
+    rom = resolve_rom(rom_arg, system=system)
     key = Path(ssh_key).expanduser()
     if not dry_run and not key.is_file():
         raise SystemExit(
@@ -691,6 +822,7 @@ def cmd_play(
     ssh_key: str = str(SSH_KEY_DEFAULT),
     audio: str = AUDIO_AUTO,
     vnc_tunnel: bool = False,
+    system: str | None = None,
 ) -> int:
     if vnc_tunnel and target != "aws":
         raise SystemExit("--vnc-tunnel applies to --target aws.")
@@ -705,11 +837,12 @@ def cmd_play(
             foreground=foreground,
             ssh_key=ssh_key,
             audio=audio,
+            system=system,
         )
 
     if audio != AUDIO_AUTO:
         print("Note: --audio and --no-audio apply to --target aws. Local Mesen is unchanged.")
-    rom = resolve_rom(rom_arg)
+    rom = resolve_rom(rom_arg, system=system)
     cmd = launch_command(rom, foreground=foreground)
     print(f"ROM: {rom}")
     print(f"Keymap: {REPO_ROOT / 'config' / 'keymap.yaml'}")
@@ -811,6 +944,7 @@ def main(argv=None) -> int:
             ssh_key=args.ssh_key,
             audio=args.audio,
             vnc_tunnel=args.vnc_tunnel,
+            system=getattr(args, "system", None),
         )
     return 1
 

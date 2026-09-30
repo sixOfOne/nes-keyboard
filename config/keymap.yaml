@@ -1,4 +1,4 @@
-# Host keyboard -> NES controller 1 (intent for MesenCE).
+# Host keyboard -> MesenCE controller (NES Port1 + Game Boy Controller).
 #
 # MesenCE stores Avalonia.Input.Key integers in settings.json:
 #   macOS:  ~/Library/Application Support/MesenCE/settings.json
@@ -6,8 +6,13 @@
 # Apply with: python3 scripts/apply_mesen_keymap.py
 # On EC2:     python3 ~/.config/nes-kickoff/apply_mesen_keymap.py --target linux
 #
+# Same WASD feel for NES and Game Boy:
 # Mapping2 = WASD + X/Z/Enter/LeftShift
 # Mapping3 = arrows + Space/Tab (OR'd with Mapping2)
+#
+# Targets written:
+#   Nes.Port1          (Type: NesController)
+#   Gameboy.Controller (Type: GameboyController)
 
 keyboard:
   # D-pad
@@ -19,9 +24,9 @@ keyboard:
   arrowdown: down
   arrowleft: left
   arrowright: right
-  # Face / system buttons (SMB-friendly)
-  z: b          # run / cancel
-  x: a          # jump / confirm
+  # Face / system buttons (SMB + Tetris friendly)
+  z: b          # run / cancel / rotate-CCW feel
+  x: a          # jump / confirm / rotate
   space: a
   enter: start
   shift: select
@@ -29,5 +34,5 @@ keyboard:
 
 notes:
   - Quit Mesen before applying keymap changes.
-  - After apply, relaunch Super Mario Bros and confirm WASD + arrows + A/B/Start/Select.
+  - After apply, relaunch and confirm WASD + arrows + A/B/Start/Select on NES and GB.
   - settings.json uses UTF-8 BOM on macOS; the apply script preserves that.

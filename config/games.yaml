@@ -1,6 +1,18 @@
 # ROM paths are local-only and must not be committed (see .gitignore for roms/).
-# `play` uses the first entry when no ROM argument is given.
+# `play` picks by --system and/or game name; with neither, uses the first entry.
+# system: nes | gb | snes | gba (MesenCE). snes/gba are reserved for future ROMs.
 
 games:
   - name: Super Mario Bros
+    system: nes
     rom: roms/Super_Mario_Bros.nes
+  - name: Tetris
+    system: gb
+    rom: roms/Tetris.gb
+  # stubs (add a ROM path when you have one):
+  # - name: Example SNES
+  #   system: snes
+  #   rom: roms/example.sfc
+  # - name: Example GBA
+  #   system: gba
+  #   rom: roms/example.gba

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Apply keyboard bindings into MesenCE settings.json.
 
-Quit Mesen before running this. Safe to re-run: only Nes.Port1 Mapping2/Mapping3
-keyboard slots are updated (Mapping1 gamepad left alone when present).
+Quit Mesen before running this. Safe to re-run: updates Nes.Port1 and
+Gameboy.Controller Mapping2/Mapping3 keyboard slots (Mapping1 gamepad left
+alone when present).
 
 MesenCE (Avalonia) stores controller keys as Avalonia.Input.Key integers in:
 
@@ -12,10 +13,14 @@ MesenCE (Avalonia) stores controller keys as Avalonia.Input.Key integers in:
           ~/.var/app/<id>/config/MesenCE/settings.json
           (also tries .../config/mesen/ and Application Support layout)
 
-Each controller port has Mapping1..Mapping4 OR'd together. This script writes:
+Each controller has Mapping1..Mapping4 OR'd together. This script writes:
 
   Mapping2 — WASD D-pad, X=A, Z=B, Enter=Start, LeftShift=Select
   Mapping3 — arrow D-pad, Space=A, Tab=Select
+
+Targets:
+  Nes.Port1          (Type: NesController)
+  Gameboy.Controller (Type: GameboyController)
 
 (UTF-8 with BOM matches files Mesen writes on macOS.)
 """
@@ -162,17 +167,22 @@ def flatpak_settings(home: Path, app_id: str = FLATPAK_APP_ID) -> list[Path]:
     ]
 
 
-def empty_mapping() -> dict:
-    out: dict = {name: None for name in SPECIAL_NULL_FIELDS}
+def empty_mapping(*, nes_specials: bool = True) -> dict:
+    out: dict = {}
+    if nes_specials:
+        out = {name: None for name in SPECIAL_NULL_FIELDS}
     for name in BUTTON_FIELDS:
         out[name] = 0
     return out
 
 
-def apply_keys(mapping: dict, keys: dict[str, int]) -> dict:
-    out = dict(mapping) if mapping else empty_mapping()
-    for name in SPECIAL_NULL_FIELDS:
-        out.setdefault(name, None)
+def apply_keys(
+    mapping: dict, keys: dict[str, int], *, nes_specials: bool = True
+) -> dict:
+    out = dict(mapping) if mapping else empty_mapping(nes_specials=nes_specials)
+    if nes_specials:
+        for name in SPECIAL_NULL_FIELDS:
+            out.setdefault(name, None)
     for name in BUTTON_FIELDS:
         out.setdefault(name, 0)
     for name, code in keys.items():
@@ -303,8 +313,24 @@ def ensure_port1(data: dict) -> dict:
     port1.setdefault("TurboSpeed", 2)
     for slot in ("Mapping1", "Mapping2", "Mapping3", "Mapping4"):
         if slot not in port1 or not isinstance(port1[slot], dict):
-            port1[slot] = empty_mapping()
+            port1[slot] = empty_mapping(nes_specials=True)
     return port1
+
+
+def ensure_gb_controller(data: dict) -> dict:
+    """Game Boy uses Gameboy.Controller (not Port1) with Type GameboyController."""
+    gb = data.setdefault("Gameboy", {})
+    if not isinstance(gb, dict):
+        raise ValueError("settings Gameboy section must be an object")
+    ctrl = gb.setdefault("Controller", {})
+    if not isinstance(ctrl, dict):
+        raise ValueError("settings Gameboy.Controller must be an object")
+    ctrl.setdefault("Type", "GameboyController")
+    ctrl.setdefault("TurboSpeed", 2)
+    for slot in ("Mapping1", "Mapping2", "Mapping3", "Mapping4"):
+        if slot not in ctrl or not isinstance(ctrl[slot], dict):
+            ctrl[slot] = empty_mapping(nes_specials=False)
+    return ctrl
 
 
 def mapping_matches(stored: dict | None, keys: dict[str, int]) -> bool:
@@ -314,6 +340,12 @@ def mapping_matches(stored: dict | None, keys: dict[str, int]) -> bool:
         if int(stored.get(name, -1)) != int(code):
             return False
     return True
+
+
+def controller_mappings_current(ctrl: dict) -> bool:
+    return mapping_matches(ctrl.get("Mapping2"), MAPPING2_KEYS) and mapping_matches(
+        ctrl.get("Mapping3"), MAPPING3_KEYS
+    )
 
 
 def apply_to_file(path: Path, *, create: bool) -> ApplyResult:
@@ -334,6 +366,7 @@ def apply_to_file(path: Path, *, create: bool) -> ApplyResult:
             "Version": "2.2.1",
             "DefaultKeyMappings": "Xbox, WasdKeys",
             "Nes": {"Port1": {"Type": "NesController", "TurboSpeed": 2}},
+            "Gameboy": {"Controller": {"Type": "GameboyController", "TurboSpeed": 2}},
         }
         messages.append(f"PASS: creating new settings at {path}")
         created = True
@@ -351,17 +384,19 @@ def apply_to_file(path: Path, *, create: bool) -> ApplyResult:
 
     try:
         port1 = ensure_port1(data)
+        gb_ctrl = ensure_gb_controller(data)
     except ValueError as exc:
         return ApplyResult(
             ok=False, changed=False, path=path, messages=[f"FAIL: {exc}"]
         )
 
-    m2_ok = mapping_matches(port1.get("Mapping2"), MAPPING2_KEYS)
-    m3_ok = mapping_matches(port1.get("Mapping3"), MAPPING3_KEYS)
-    if m2_ok and m3_ok and not created:
+    nes_ok = controller_mappings_current(port1)
+    gb_ok = controller_mappings_current(gb_ctrl)
+    if nes_ok and gb_ok and not created:
         messages.append(f"PASS: keyboard mappings already current in {path}")
         messages.append(
-            "PASS: Mapping2=WASD+X/Z/Enter/Shift Mapping3=arrows+Space/Tab"
+            "PASS: Nes.Port1 + Gameboy.Controller "
+            "Mapping2=WASD+X/Z/Enter/Shift Mapping3=arrows+Space/Tab"
         )
         return ApplyResult(ok=True, changed=False, path=path, messages=messages)
 
@@ -377,8 +412,18 @@ def apply_to_file(path: Path, *, create: bool) -> ApplyResult:
                 messages=[f"FAIL: cannot backup {path}: {exc}"],
             )
 
-    port1["Mapping2"] = apply_keys(port1.get("Mapping2") or {}, MAPPING2_KEYS)
-    port1["Mapping3"] = apply_keys(port1.get("Mapping3") or {}, MAPPING3_KEYS)
+    port1["Mapping2"] = apply_keys(
+        port1.get("Mapping2") or {}, MAPPING2_KEYS, nes_specials=True
+    )
+    port1["Mapping3"] = apply_keys(
+        port1.get("Mapping3") or {}, MAPPING3_KEYS, nes_specials=True
+    )
+    gb_ctrl["Mapping2"] = apply_keys(
+        gb_ctrl.get("Mapping2") or {}, MAPPING2_KEYS, nes_specials=False
+    )
+    gb_ctrl["Mapping3"] = apply_keys(
+        gb_ctrl.get("Mapping3") or {}, MAPPING3_KEYS, nes_specials=False
+    )
     # Leave Mapping1 (often Xbox pad) and Mapping4 untouched aside from ensure.
 
     try:
@@ -395,19 +440,34 @@ def apply_to_file(path: Path, *, create: bool) -> ApplyResult:
     try:
         check = load_settings(path)
         cport = check["Nes"]["Port1"]
+        cgb = check["Gameboy"]["Controller"]
         if not mapping_matches(cport.get("Mapping2"), MAPPING2_KEYS):
             return ApplyResult(
                 ok=False,
                 changed=False,
                 path=path,
-                messages=[f"FAIL: Mapping2 readback mismatch in {path}"],
+                messages=[f"FAIL: Nes Mapping2 readback mismatch in {path}"],
             )
         if not mapping_matches(cport.get("Mapping3"), MAPPING3_KEYS):
             return ApplyResult(
                 ok=False,
                 changed=False,
                 path=path,
-                messages=[f"FAIL: Mapping3 readback mismatch in {path}"],
+                messages=[f"FAIL: Nes Mapping3 readback mismatch in {path}"],
+            )
+        if not mapping_matches(cgb.get("Mapping2"), MAPPING2_KEYS):
+            return ApplyResult(
+                ok=False,
+                changed=False,
+                path=path,
+                messages=[f"FAIL: Gameboy Mapping2 readback mismatch in {path}"],
+            )
+        if not mapping_matches(cgb.get("Mapping3"), MAPPING3_KEYS):
+            return ApplyResult(
+                ok=False,
+                changed=False,
+                path=path,
+                messages=[f"FAIL: Gameboy Mapping3 readback mismatch in {path}"],
             )
     except (KeyError, TypeError, json.JSONDecodeError, ValueError) as exc:
         return ApplyResult(
@@ -417,6 +477,8 @@ def apply_to_file(path: Path, *, create: bool) -> ApplyResult:
             messages=[f"FAIL: readback error: {exc}"],
         )
 
+    messages.append("PASS: wrote keymap Nes.Port1 Mapping2/Mapping3")
+    messages.append("PASS: wrote keymap Gameboy.Controller Mapping2/Mapping3")
     messages.append("PASS: wrote keymap Mapping2 (WASD+X/Z/Enter/Shift)")
     messages.append("PASS: wrote keymap Mapping3 (arrows+Space/Tab)")
     messages.append(f"PASS: settings {path}")
@@ -518,7 +580,7 @@ def main(argv: list[str] | None = None) -> int:
     intent = find_keymap_json(args.json_path, home)
     print(f"Keymap intent: {intent if intent.is_file() else '(built-in Avalonia codes)'}")
     print(
-        "Bindings: WASD+arrows D-pad; X/Space=A; Z=B; Enter=Start; Shift/Tab=Select"
+        "Bindings (NES Port1 + GB Controller): WASD+arrows D-pad; X/Space=A; Z=B; Enter=Start; Shift/Tab=Select"
     )
     print(
         "NOTE: quit Mesen before applying; a running app can overwrite settings on exit."

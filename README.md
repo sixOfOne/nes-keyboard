@@ -1,13 +1,13 @@
 # nes-keyboard
 
-Keyboard-controlled NES play via [Mesen](https://github.com/nesdev-org/MesenCE) (MesenCE), with a Python kickoff CLI, Ansible for host config, and Terraform for an optional AWS EC2 host.
+Keyboard-controlled NES / Game Boy play via [Mesen](https://github.com/nesdev-org/MesenCE) (MesenCE), with a Python kickoff CLI, Ansible for host config, and Terraform for an optional AWS EC2 host.
 
-Modeled on `atari-keyboard` (Stella / Pac-Man). Emulator rename: Stella → **Mesen**; ROM: Super Mario Bros (`.nes`).
+Modeled on `atari-keyboard` (Stella / Pac-Man). Emulator: **MesenCE** (NES/SNES/GB/GBA). Bundled games: Super Mario Bros (`.nes`) and Tetris (`.gb`).
 
 ## Status (scaffold)
 
-- **Local (macOS):** project layout, `nes_kickoff` CLI (`play` / `configure` / `apply`), ROM under `roms/` (gitignored), WASD/arrows/A/B/Start/Select keymap applied into MesenCE `settings.json`, smoke test.
-- **Mesen install:** `/Applications/Mesen.app` (arm64 MesenCE 2.2.1) + `~/.local/bin/mesen` symlink. Keymap writes `~/Library/Application Support/MesenCE/settings.json` (Mapping2/Mapping3 Avalonia key codes).
+- **Local (macOS):** project layout, `nes_kickoff` CLI (`play` / `configure` / `apply`), ROMs under `roms/` (gitignored), WASD/arrows/A/B/Start/Select keymap applied into MesenCE `settings.json` for **NES Port1** and **Game Boy Controller**, smoke test.
+- **Mesen install:** `/Applications/Mesen.app` (arm64 MesenCE 2.2.1) + `~/.local/bin/mesen` symlink. Keymap writes `~/Library/Application Support/MesenCE/settings.json` (`Nes.Port1` + `Gameboy.Controller` Mapping2/Mapping3 Avalonia key codes).
 - **AWS:** Terraform local-ready (`enable_aws=false` by default). Same shape as atari-keyboard: us-east-2, cheap `t3.small`, VNC on 127.0.0.1 via SSH tunnel only, sshd hardening, PipeWire remote audio. Reuses **`neo-atari`** key pair + `~/.ssh/neo-atari.pem` unless you create a dedicated NES key later.
 - **Do not** `terraform apply` / spend AWS money until you intentionally flip `enable_aws` and review tfvars. **Do not** push to GitHub unless asked.
 
@@ -27,14 +27,17 @@ terraform/        local marker by default; EC2 when enable_aws=true
 1. Install Mesen (macOS build from [MesenCE releases](https://github.com/nesdev-org/MesenCE/releases)). Symlink when ready:
    `ln -sfn /Applications/Mesen.app/Contents/MacOS/Mesen ~/.local/bin/mesen`
    (or `MesenCE.app` if that is the bundle name).
-2. ROM is already at `roms/Super_Mario_Bros.nes` and listed in `config/games.yaml` (gitignored).
-3. Apply keymap (quit Mesen first if it is open):
+2. ROMs: `roms/Super_Mario_Bros.nes` (NES) and `roms/Tetris.gb` (Game Boy), listed in `config/games.yaml` (gitignored).
+3. Apply keymap (quit Mesen first if it is open) — writes NES + Game Boy maps:
    `python3 scripts/apply_mesen_keymap.py`
 4. Smoke check (ROM required; Mesen optional until installed):
    `python3 scripts/smoke_test.py`
 5. Play (after Mesen is installed):
-   `PYTHONPATH=src python3 -m nes_kickoff play`
-   (uses `open -a Mesen` on macOS when the app bundle exists)
+   ```bash
+   PYTHONPATH=src python3 -m nes_kickoff play --system nes "Super Mario Bros"
+   PYTHONPATH=src python3 -m nes_kickoff play --system gb Tetris
+   ```
+   (uses `open -a Mesen` on macOS when the app bundle exists; omit `--system` to infer from the ROM / games.yaml)
 
 Optional local Ansible (symlink + keymap stub):
 
@@ -86,7 +89,8 @@ ssh -i ~/.ssh/neo-atari.pem -L 5901:127.0.0.1:5901 ec2-user@HOST
 
 ```bash
 PYTHONPATH=src python3 -m nes_kickoff play --target aws --dry-run
-PYTHONPATH=src python3 -m nes_kickoff play "Super Mario Bros" --target aws
+PYTHONPATH=src python3 -m nes_kickoff play --system nes "Super Mario Bros" --target aws
+PYTHONPATH=src python3 -m nes_kickoff play --system gb Tetris --target aws
 ```
 
 ### Remote audio
@@ -97,7 +101,7 @@ TigerVNC is picture + keyboard only. `configure --target aws` installs PipeWire 
 
 | Command | Purpose |
 |--------|---------|
-| `play [--target local\|aws] [--audio\|--no-audio] [--dry-run] [rom\|name]` | Launch Mesen locally, or sync/launch on AWS/VNC |
+| `play [--system nes\|gb\|snes\|gba] [--target local\|aws] [--audio\|--no-audio] [--dry-run] [rom\|name]` | Launch Mesen locally, or sync/launch chosen ROM on AWS/VNC |
 | `play --target aws --vnc-tunnel` | Print SSH local-forward for `vnc://127.0.0.1:5901` |
 | `configure [--target local\|aws]` | Ansible configure (aws: sshd harden + VNC localhost + PipeWire) |
 | `apply [--dry-run] [--init]` | Terraform plan/apply (`enable_aws=false` → local marker only) |
@@ -109,15 +113,31 @@ PYTHONPATH=src python3 -m nes_kickoff <command>
 
 ## Keymap (intent)
 
-| Keys | NES |
-|------|-----|
+Same WASD feel for NES and Game Boy:
+
+| Keys | NES / GB |
+|------|----------|
 | W A S D / arrows | D-pad |
-| X / Space | A (jump) |
-| Z | B (run) |
+| X / Space | A |
+| Z | B |
 | Enter | Start |
 | Shift / Tab | Select |
 
-See `config/keymap.yaml` and `config/mesen_keymap.json`. Apply writes Avalonia key codes into `Nes.Port1` Mapping2 (WASD+X/Z/Enter/Shift) and Mapping3 (arrows+Space/Tab) in `~/Library/Application Support/MesenCE/settings.json` (Linux: `~/.config/MesenCE/settings.json`).
+See `config/keymap.yaml` and `config/mesen_keymap.json`. Apply writes Avalonia key codes into `Nes.Port1` and `Gameboy.Controller` Mapping2 (WASD+X/Z/Enter/Shift) and Mapping3 (arrows+Space/Tab) in `~/Library/Application Support/MesenCE/settings.json` (Linux: `~/.config/MesenCE/settings.json`).
+
+### `games.yaml` shape
+
+```yaml
+games:
+  - name: Super Mario Bros
+    system: nes
+    rom: roms/Super_Mario_Bros.nes
+  - name: Tetris
+    system: gb
+    rom: roms/Tetris.gb
+```
+
+`system` is one of `nes`, `gb`, `snes`, `gba`. `play --system` filters to that console; if omitted, the CLI infers from the ROM extension or the matched games.yaml entry.
 
 ## Costs / teardown
 

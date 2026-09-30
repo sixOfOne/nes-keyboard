@@ -106,7 +106,21 @@
       - fontconfig
       - freetype
       - python3
+      # libdecor is pulled as a weak dep of the Fedora SDL2 RPM below.
+      - libdecor
     state: present
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, install]
+
+# AL2023 amazonlinux repo does not ship SDL2 (needed by MesenCore.so /
+# libSDL2-2.0.so.0). Pin a Fedora 36 binary whose glibc requirement is
+# satisfied by AL2023 (GLIBC_2.34/2.35). Verified 2026-09-30 on us-east-2.
+- name: Install SDL2 runtime for MesenCore (Amazon Linux)
+  ansible.builtin.dnf:
+    name: "{{ mesen_sdl2_rpm_url }}"
+    state: present
+    disable_gpg_check: true
   become: true
   when: ansible_os_family == "RedHat"
   tags: [mesen, install]

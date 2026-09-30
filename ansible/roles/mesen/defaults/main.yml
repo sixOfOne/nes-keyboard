@@ -21,3 +21,7 @@ vnc_password_file: "{{ lookup('env', 'HOME') }}/.config/nes-kickoff/vnc-password
 
 # nesdev-org/MesenCE GitHub release tag for Amazon Linux x64 zip install.
 mesen_release_tag: "2.2.1"
+
+# AL2023 does not package SDL2. Fedora 36 build works with AL2023 glibc.
+mesen_sdl2_rpm_url: "https://kojipkgs.fedoraproject.org/packages/SDL2/2.0.22/3.fc36/x86_64/SDL2-2.0.22-3.fc36.x86_64.rpm"
+

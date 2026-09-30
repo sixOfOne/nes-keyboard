@@ -210,24 +210,56 @@ def quit_mesen() -> list[str]:
             if r.returncode == 0:
                 messages.append(f"PASS: asked {app} to quit")
         time.sleep(0.8)
-    # Signal any leftover process named Mesen / mesen
+    # Signal leftover Mesen emulator processes only. Do NOT match this
+    # script's argv (apply_mesen_keymap.py) or ansible wrappers.
+    me = os.getpid()
     try:
-        out = subprocess.check_output(["pgrep", "-lf", "[Mm]esen"], text=True)
+        out = subprocess.check_output(["pgrep", "-af", "[Mm]esen"], text=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         out = ""
     for line in out.splitlines():
         parts = line.split(None, 1)
-        if not parts:
+        if len(parts) < 2:
             continue
         try:
             pid = int(parts[0])
         except ValueError:
             continue
+        if pid == me:
+            continue
+        cmd = parts[1]
+        # Skip this apply script and unrelated paths that merely contain "mesen".
+        if "apply_mesen_keymap" in cmd or "ansible" in cmd.lower():
+            continue
+        # Prefer real emulator binaries / app names.
+        base = Path(cmd.split()[0]).name if cmd.split() else ""
+        if base not in {"Mesen", "mesen", "MesenCE"} and "/Mesen" not in cmd and "MacOS/Mesen" not in cmd:
+            # Still allow exact-name matches via pgrep -x fallback below.
+            if "Contents/MacOS/Mesen" not in cmd and "/usr/local/lib/mesen/" not in cmd and "/usr/local/bin/mesen" not in cmd:
+                continue
         try:
             os.kill(pid, signal.SIGTERM)
-            messages.append(f"PASS: sent SIGTERM to pid {pid}")
+            messages.append(f"PASS: sent SIGTERM to pid {pid} ({cmd[:80]})")
         except OSError:
             pass
+    # Exact binary name (avoids the apply script path)
+    for name in ("Mesen", "mesen"):
+        try:
+            out = subprocess.check_output(["pgrep", "-x", name], text=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+        for pid_s in out.split():
+            try:
+                pid = int(pid_s)
+            except ValueError:
+                continue
+            if pid == me:
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+                messages.append(f"PASS: sent SIGTERM to {name} pid {pid}")
+            except OSError:
+                pass
     if messages:
         time.sleep(0.5)
     else:

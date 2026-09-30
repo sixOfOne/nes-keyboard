@@ -223,6 +223,7 @@
     cmd: >-
       python3 {{ ansible_env.HOME }}/.config/nes-kickoff/apply_mesen_keymap.py
       --target linux
+      --no-quit
       --json {{ ansible_env.HOME }}/.config/nes-kickoff/mesen_keymap.json
   register: keymap_apply_linux
   changed_when: >-

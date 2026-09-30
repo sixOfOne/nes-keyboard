@@ -1,0 +1,18 @@
+---
+# Local:  ansible-playbook -i inventory/localhost.yml playbook.yml
+# AWS:    python3 scripts/render_aws_inventory.py &&
+#         ansible-playbook -i inventory/aws.yml playbook.yml
+# Or:     PYTHONPATH=src python3 -m nes_kickoff configure [--target aws|local]
+- name: Configure Mesen for keyboard NES
+  hosts: all
+  gather_facts: true
+  vars:
+    repo_root: "{{ playbook_dir | dirname }}"
+    mesen_app: /Applications/Mesen.app
+    mesen_bin: /Applications/Mesen.app/Contents/MacOS/Mesen
+    local_bin: "{{ ansible_env.HOME }}/.local/bin"
+  roles:
+    # Amazon Linux only. macOS local configure does not touch sshd.
+    - role: sshd
+      when: ansible_os_family == "RedHat"
+    - role: mesen

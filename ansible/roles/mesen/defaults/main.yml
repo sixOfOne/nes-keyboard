@@ -1,0 +1,20 @@
+# Flatpak application id placeholder (community build joshas/Mesen2-flatpak).
+# NOT published on Flathub as of 2026-09. Prefer GitHub release binaries /
+# AppImage from https://github.com/nesdev-org/MesenCE/releases for AWS hosts.
+# Settings (when using that Flatpak) live under ~/.var/app/<id>/config/.
+mesen_flatpak_id: ca.mesen.Mesen2
+
+# VNC / remote desktop (Amazon Linux / EC2).
+# vncserver-config-mandatory forces `localhost`, so TCP 5901 is loopback only.
+# Connect with: ssh -L 5901:127.0.0.1:5901 ec2-user@HOST
+# then: vnc://127.0.0.1:5901
+vnc_display: ":1"
+vnc_port: 5901
+vnc_geometry: "1280x720"
+vnc_session_name: metacity-mesen
+# PipeWire pulse null sink. The pulseaudio daemon package conflicts with
+# pipewire-pulseaudio and is not installed. TigerVNC does not carry audio;
+# play --target aws records this sink over SSH.
+mesen_audio_sink: mesen
+# Password lives only on the Ansible controller (Mac), never in the repo.
+vnc_password_file: "{{ lookup('env', 'HOME') }}/.config/nes-kickoff/vnc-password.txt"

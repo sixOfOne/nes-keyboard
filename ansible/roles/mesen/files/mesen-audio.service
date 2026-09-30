@@ -1,0 +1,16 @@
+[Unit]
+Description=Mesen VNC null sink (PipeWire pulse)
+After=pipewire-pulse.service wireplumber.service
+Requires=pipewire-pulse.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/mesen-audio-setup
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

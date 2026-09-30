@@ -1,0 +1,2 @@
+# Reserved for the Python CLI; YAML support can be enabled when config loading is implemented.
+pyyaml>=6.0

@@ -1,0 +1,8 @@
+---
+- name: Restart TigerVNC
+  ansible.builtin.systemd:
+    name: "vncserver@{{ vnc_display }}.service"
+    state: restarted
+    daemon_reload: true
+  become: true
+  when: ansible_os_family == "RedHat"

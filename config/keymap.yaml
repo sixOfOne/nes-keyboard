@@ -1,0 +1,36 @@
+# Host keyboard -> NES controller 1 (intent for Mesen).
+#
+# Mesen stores input mappings in its own settings (JSON under the app support
+# directory on macOS; format varies by build). This file is the project
+# contract. scripts/apply_mesen_keymap.py applies it once a local Mesen
+# install is detected; until then it is documentation + a JSON stub.
+#
+#   macOS (typical): ~/Library/Application Support/Mesen/
+#   Flatpak (unofficial id, not on Flathub): ~/.var/app/ca.mesen.Mesen2/
+#   Stub snapshot: config/mesen_keymap.json
+#
+# Re-apply: python3 scripts/apply_mesen_keymap.py
+# On EC2:   python3 ~/.config/nes-kickoff/apply_mesen_keymap.py --target flatpak
+
+keyboard:
+  # D-pad
+  w: up
+  a: left
+  s: down
+  d: right
+  arrowup: up
+  arrowdown: down
+  arrowleft: left
+  arrowright: right
+  # Face / system buttons (SMB-friendly)
+  z: b          # run / cancel (also common: x)
+  x: a          # jump / confirm
+  space: a
+  enter: start
+  shift: select
+  tab: select
+
+notes:
+  - Quit Mesen before applying keymap changes.
+  - After apply, relaunch Super Mario Bros and confirm WASD + arrows + A/B/Start/Select.
+  - Mesen install is still in progress on this Mac; apply is stubbed until the binary exists.

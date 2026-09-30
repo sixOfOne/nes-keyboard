@@ -1,0 +1,72 @@
+#!/bin/bash
+# Launch Mesen on the TigerVNC display.
+#
+# Prefer /usr/local/bin/mesen (nesdev-org/MesenCE GitHub release or AppImage).
+# Flatpak id ca.mesen.Mesen2 is a community placeholder and is NOT on Flathub.
+#
+# LIBGL_ALWAYS_SOFTWARE=1 stays on under TigerVNC. PulseAudio is enabled only
+# after mesen-audio-setup has created the "mesen" sink; otherwise
+# SDL_AUDIODRIVER=dummy keeps the window up.
+#
+# NES_AUDIO=auto (default) or on: try pulse, fall back to silent.
+# NES_AUDIO=off: stay silent (`play --no-audio`).
+#
+# The final driver name is written to /tmp/nes-kickoff-audio-mode.
+set -euo pipefail
+
+APP_ID="${MESEN_FLATPAK_ID:-ca.mesen.Mesen2}"
+MESEN_BIN="${MESEN_BIN:-/usr/local/bin/mesen}"
+MODE_FILE="${NES_AUDIO_MODE_FILE:-/tmp/nes-kickoff-audio-mode}"
+SETUP="${MESEN_AUDIO_SETUP:-/usr/local/bin/mesen-audio-setup}"
+
+uid=$(id -u)
+export DISPLAY="${DISPLAY:-:1}"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+fi
+
+case "${NES_AUDIO:-auto}" in
+  on|off|auto) audio_mode="${NES_AUDIO:-auto}" ;;
+  *) audio_mode=auto ;;
+esac
+
+driver=dummy
+if [[ "${audio_mode}" != off ]] \
+  && [[ -x "${SETUP}" ]] \
+  && "${SETUP}"
+then
+  if [[ -S "${XDG_RUNTIME_DIR}/pulse/native" ]]; then
+    driver=pulseaudio
+  else
+    echo "mesen-flatpak: PulseAudio socket missing; launching silent" >&2
+  fi
+elif [[ "${audio_mode}" != off ]]; then
+  echo "mesen-flatpak: PipeWire sink is not ready; launching silent" >&2
+fi
+
+printf '%s\n' "${driver}" >"${MODE_FILE}"
+echo "mesen-flatpak: SDL_AUDIODRIVER=${driver}" >&2
+
+export SDL_AUDIODRIVER="${driver}"
+export SDL_VIDEODRIVER=x11
+export LIBGL_ALWAYS_SOFTWARE=1
+
+if [[ -x "${MESEN_BIN}" ]]; then
+  exec "${MESEN_BIN}" "$@"
+fi
+
+if command -v flatpak >/dev/null 2>&1 && flatpak info "${APP_ID}" >/dev/null 2>&1; then
+  exec flatpak run \
+    --socket=pulseaudio \
+    --env="SDL_AUDIODRIVER=${SDL_AUDIODRIVER}" \
+    --env="SDL_VIDEODRIVER=${SDL_VIDEODRIVER}" \
+    --env="LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE}" \
+    "${APP_ID}" \
+    "$@"
+fi
+
+echo "mesen-flatpak: no ${MESEN_BIN} and Flatpak ${APP_ID} not installed" >&2
+echo "Install MesenCE from https://github.com/nesdev-org/MesenCE/releases" >&2
+exit 1

@@ -1,0 +1,6 @@
+# ROM paths are local-only and must not be committed (see .gitignore for roms/).
+# `play` uses the first entry when no ROM argument is given.
+
+games:
+  - name: Super Mario Bros
+    rom: roms/Super_Mario_Bros.nes

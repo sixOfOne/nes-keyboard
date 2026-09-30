@@ -1,0 +1,15 @@
+{
+  "emulator": "Mesen",
+  "controller": 1,
+  "note": "Stub mapping for Super Mario Bros. Apply script writes this into Mesen settings once the install is present. Flatpak id ca.mesen.Mesen2 is a community placeholder (not on Flathub); prefer GitHub release binaries / AppImage on Linux.",
+  "bindings": [
+    {"action": "Up", "keys": ["W", "Up"]},
+    {"action": "Down", "keys": ["S", "Down"]},
+    {"action": "Left", "keys": ["A", "Left"]},
+    {"action": "Right", "keys": ["D", "Right"]},
+    {"action": "A", "keys": ["X", "Space"]},
+    {"action": "B", "keys": ["Z"]},
+    {"action": "Start", "keys": ["Enter", "Return"]},
+    {"action": "Select", "keys": ["LeftShift", "Tab"]}
+  ]
+}

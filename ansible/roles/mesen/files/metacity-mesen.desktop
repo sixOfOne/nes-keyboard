@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Metacity Mesen
+Comment=Minimal metacity + xterm session for remote Mesen
+Exec=/usr/local/bin/mesen-vnc-session
+TryExec=/usr/local/bin/mesen-vnc-session
+Type=Application
+DesktopNames=Metacity

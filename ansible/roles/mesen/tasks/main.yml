@@ -1,0 +1,558 @@
+---
+# --- macOS (local smoke path) ---
+- name: Ensure Mesen.app is present (macOS)
+  ansible.builtin.stat:
+    path: "{{ mesen_app }}"
+  register: mesen_app_stat
+  when: ansible_os_family == "Darwin"
+  tags: [mesen, install]
+
+- name: Check MesenCE.app fallback (macOS)
+  ansible.builtin.stat:
+    path: /Applications/MesenCE.app
+  register: mesence_app_stat
+  when: ansible_os_family == "Darwin"
+  tags: [mesen, install]
+
+- name: Warn when Mesen.app is missing (macOS install may still be downloading)
+  ansible.builtin.debug:
+    msg: >-
+      Mesen.app not found at {{ mesen_app }} (also check MesenCE.app).
+      Install from https://github.com/nesdev-org/MesenCE/releases then re-run
+      configure. Local scaffold continues without failing.
+  when:
+    - ansible_os_family == "Darwin"
+    - not (mesen_app_stat.stat.exists | default(false))
+    - not (mesence_app_stat.stat.exists | default(false))
+  tags: [mesen, install]
+
+- name: Ensure ~/.local/bin exists (macOS)
+  ansible.builtin.file:
+    path: "{{ local_bin }}"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == "Darwin"
+  tags: [mesen, install]
+
+- name: Symlink mesen onto PATH via ~/.local/bin (macOS)
+  ansible.builtin.file:
+    src: "{{ mesen_bin if (mesen_app_stat.stat.exists | default(false)) else '/Applications/MesenCE.app/Contents/MacOS/Mesen' }}"
+    dest: "{{ local_bin }}/mesen"
+    state: link
+    force: true
+  when:
+    - ansible_os_family == "Darwin"
+    - (mesen_app_stat.stat.exists | default(false)) or (mesence_app_stat.stat.exists | default(false))
+  tags: [mesen, install]
+
+- name: Ensure nes-kickoff config directory exists (macOS)
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.config/nes-kickoff"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == "Darwin"
+  tags: [mesen, keymap]
+
+- name: Copy project keymap intent file (macOS)
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/config/keymap.yaml"
+    dest: "{{ ansible_env.HOME }}/.config/nes-kickoff/keymap.yaml"
+    mode: "0644"
+  when: ansible_os_family == "Darwin"
+  tags: [mesen, keymap]
+
+- name: Ensure Mesen settings directory exists (macOS)
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/Library/Application Support/Mesen"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == "Darwin"
+  tags: [mesen, keymap]
+
+- name: Apply Mesen joystick keymap from repo snapshot (macOS)
+  ansible.builtin.command:
+    cmd: python3 "{{ repo_root }}/scripts/apply_mesen_keymap.py"
+  register: keymap_apply
+  changed_when: "'PASS: wrote keymap' in (keymap_apply.stdout | default(''))"
+  when: ansible_os_family == "Darwin"
+  tags: [mesen, keymap]
+
+- name: Show keymap apply result (macOS)
+  ansible.builtin.debug:
+    var: keymap_apply.stdout_lines
+  when:
+    - ansible_os_family == "Darwin"
+    - keymap_apply is defined
+  tags: [mesen, keymap]
+
+# --- Amazon Linux / remote EC2 ---
+- name: Install Mesen dependencies (Amazon Linux)
+  ansible.builtin.dnf:
+    name:
+      - tar
+      - gzip
+      - which
+      - libX11
+      - libXext
+      - libXrandr
+      - libXcursor
+      - mesa-libGL
+      - alsa-lib
+      - python3
+    state: present
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, install]
+
+- name: Check whether mesen is already on PATH (Linux)
+  ansible.builtin.command: which mesen
+  register: mesen_which
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, install]
+
+- name: Install Mesen via package manager when available (Linux)
+  ansible.builtin.dnf:
+    name: mesen
+    state: present
+  become: true
+  register: mesen_pkg
+  failed_when: false
+  when:
+    - ansible_os_family == "RedHat"
+    - mesen_which.rc != 0
+  tags: [mesen, install]
+
+- name: Report Mesen package install status (Linux)
+  ansible.builtin.debug:
+    msg: >-
+      Mesen package result: {{ mesen_pkg.msg | default(mesen_pkg.rc | default('ok')) }}.
+      No official Flathub package. Prefer a GitHub release binary or AppImage
+      from https://github.com/nesdev-org/MesenCE/releases (place as /usr/local/bin/mesen).
+      Community Flatpak id placeholder: {{ mesen_flatpak_id }} (joshas/Mesen2-flatpak; not on Flathub).
+  when:
+    - ansible_os_family == "RedHat"
+    - mesen_pkg is defined
+  tags: [mesen, install]
+
+# Flatpak install is intentionally NOT automated: ca.mesen.Mesen2 is not on
+# Flathub. mesen-flatpak wrapper remains for when a local/custom Flatpak build
+# is installed, or when a binary is wrapped similarly.
+- name: Note Mesen install path when still missing (Linux)
+  ansible.builtin.debug:
+    msg: >-
+      mesen not on PATH after dnf attempt. Install MesenCE manually on this
+      host, then re-run configure. VNC / PipeWire / sshd tasks still proceed.
+  when:
+    - ansible_os_family == "RedHat"
+    - mesen_which.rc != 0
+  tags: [mesen, install]
+
+- name: Ensure remote config directory exists (Linux)
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.config/nes-kickoff"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Copy keymap intent file to remote host (Linux)
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/config/keymap.yaml"
+    dest: "{{ ansible_env.HOME }}/.config/nes-kickoff/keymap.yaml"
+    mode: "0644"
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Copy Mesen keymap snapshot to remote host (Linux)
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/config/mesen_keymap.json"
+    dest: "{{ ansible_env.HOME }}/.config/nes-kickoff/mesen_keymap.json"
+    mode: "0644"
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Ensure python3 is present for keymap apply (Linux)
+  ansible.builtin.dnf:
+    name: python3
+    state: present
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Install keymap apply script on remote host (Linux)
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/scripts/apply_mesen_keymap.py"
+    dest: "{{ ansible_env.HOME }}/.config/nes-kickoff/apply_mesen_keymap.py"
+    mode: "0755"
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Apply Mesen joystick keymap into Flatpak settings (Linux)
+  ansible.builtin.command:
+    cmd: >-
+      python3 {{ ansible_env.HOME }}/.config/nes-kickoff/apply_mesen_keymap.py
+      --target flatpak
+      --flatpak-id {{ mesen_flatpak_id }}
+      --json {{ ansible_env.HOME }}/.config/nes-kickoff/mesen_keymap.json
+  register: keymap_apply_linux
+  changed_when: >-
+    ('PASS: wrote keymap' in (keymap_apply_linux.stdout | default('')))
+    and ('STUB:' not in (keymap_apply_linux.stdout | default('')))
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Restore SELinux context on Flatpak Mesen config (Linux)
+  ansible.builtin.command:
+    cmd: >-
+      restorecon -RFv
+      {{ ansible_env.HOME }}/.var/app/{{ mesen_flatpak_id }}/config/mesen
+  register: mesen_restorecon
+  changed_when: "'Relabeled' in (mesen_restorecon.stdout | default(''))"
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Show Flatpak keymap apply result (Linux)
+  ansible.builtin.debug:
+    var: keymap_apply_linux.stdout_lines
+  when:
+    - ansible_os_family == "RedHat"
+    - keymap_apply_linux is defined
+  tags: [mesen, keymap]
+
+# --- Linux VNC / remote desktop (TigerVNC + metacity) ---
+- name: Install minimal desktop stack for VNC (Linux)
+  ansible.builtin.dnf:
+    name:
+      - tigervnc-server
+      - dbus-x11
+      - xterm
+      - dejavu-sans-fonts
+      - xorg-x11-xauth
+      - xorg-x11-server-utils
+      - metacity
+    state: present
+    install_weak_deps: false
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+# pipewire-pulseaudio provides pulseaudio-daemon and conflicts with the
+# pulseaudio package. Do not install the pulseaudio daemon here.
+- name: Install PipeWire audio stack for VNC (Linux)
+  ansible.builtin.dnf:
+    name:
+      - pipewire
+      - pipewire-pulseaudio
+      - pipewire-utils
+      - wireplumber
+      - pulseaudio-utils
+    state: present
+    install_weak_deps: false
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Install Mesen VNC session launcher
+  ansible.builtin.copy:
+    src: mesen-vnc-session.sh
+    dest: /usr/local/bin/mesen-vnc-session
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Install Flatpak Mesen launcher for TigerVNC (Linux)
+  ansible.builtin.copy:
+    src: mesen-flatpak
+    dest: /usr/local/bin/mesen-flatpak
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Install Mesen PipeWire sink setup script (Linux)
+  ansible.builtin.copy:
+    src: mesen-audio-setup
+    dest: /usr/local/bin/mesen-audio-setup
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Install Mesen audio capture script (Linux)
+  ansible.builtin.copy:
+    src: mesen-audio-capture
+    dest: /usr/local/bin/mesen-audio-capture
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Install Mesen audio user service (Linux)
+  ansible.builtin.copy:
+    src: mesen-audio.service
+    dest: /usr/lib/systemd/user/mesen-audio.service
+    mode: "0644"
+    owner: root
+    group: root
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Install Mesen VNC xsession desktop entry
+  ansible.builtin.copy:
+    src: metacity-mesen.desktop
+    dest: "/usr/share/xsessions/{{ vnc_session_name }}.desktop"
+    mode: "0644"
+    owner: root
+    group: root
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Ensure /etc/tigervnc exists
+  ansible.builtin.file:
+    path: /etc/tigervnc
+    state: directory
+    mode: "0755"
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Map VNC display to ec2-user
+  ansible.builtin.copy:
+    dest: /etc/tigervnc/vncserver.users
+    mode: "0644"
+    content: |
+      # Managed by nes-keyboard ansible mesen role
+      {{ vnc_display }}={{ ansible_user_id }}
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Set TigerVNC defaults (session and geometry)
+  ansible.builtin.copy:
+    dest: /etc/tigervnc/vncserver-config-defaults
+    mode: "0644"
+    content: |
+      # Managed by nes-keyboard ansible mesen role
+      session={{ vnc_session_name }}
+      geometry={{ vnc_geometry }}
+      securitytypes=vncauth
+      alwaysshared
+      localhost
+  become: true
+  when: ansible_os_family == "RedHat"
+  notify: Restart TigerVNC
+  tags: [mesen, vnc]
+
+- name: Force TigerVNC to listen on localhost only
+  ansible.builtin.copy:
+    dest: /etc/tigervnc/vncserver-config-mandatory
+    mode: "0644"
+    content: |
+      # Managed by nes-keyboard ansible mesen role.
+      # Mandatory wins over ~/.config/tigervnc/config and ~/.vnc/config.
+      # Reach the desktop with:
+      #   ssh -L 5901:127.0.0.1:5901 ec2-user@HOST
+      #   vnc://127.0.0.1:5901
+      localhost
+  become: true
+  when: ansible_os_family == "RedHat"
+  notify: Restart TigerVNC
+  tags: [mesen, vnc]
+
+- name: Restore SELinux context on TigerVNC config
+  ansible.builtin.command:
+    cmd: >-
+      restorecon -v
+      /etc/tigervnc/vncserver-config-defaults
+      /etc/tigervnc/vncserver-config-mandatory
+  register: vnc_cfg_restorecon
+  changed_when: >-
+    'Relabeled' in (
+      (vnc_cfg_restorecon.stdout | default(''))
+      ~ (vnc_cfg_restorecon.stderr | default(''))
+    )
+  failed_when: false
+  become: true
+  when: ansible_os_family == "RedHat"
+  notify: Restart TigerVNC
+  tags: [mesen, vnc]
+
+- name: Require password file on Ansible controller
+  ansible.builtin.stat:
+    path: "{{ vnc_password_file }}"
+  register: vnc_pw_stat
+  delegate_to: localhost
+  connection: local
+  become: false
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Fail when VNC password file is missing on controller
+  ansible.builtin.fail:
+    msg: >-
+      VNC password file missing at {{ vnc_password_file }}.
+      Create it (mode 600) with an 8-char password, outside git, e.g.
+      mkdir -p ~/.config/nes-kickoff &&
+      openssl rand -base64 6 | tr -d '/+=' | head -c 8 >
+      ~/.config/nes-kickoff/vnc-password.txt &&
+      chmod 600 ~/.config/nes-kickoff/vnc-password.txt
+  when:
+    - ansible_os_family == "RedHat"
+    - not (vnc_pw_stat.stat.exists | default(false))
+  tags: [mesen, vnc]
+
+- name: Ensure remote ~/.vnc directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.vnc"
+    state: directory
+    mode: "0700"
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Encode VNC password on remote from controller secret
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s\n' "$VNC_PASS" | vncpasswd -f > "$HOME/.vnc/passwd"
+    chmod 600 "$HOME/.vnc/passwd"
+  environment:
+    VNC_PASS: "{{ lookup('file', vnc_password_file) | trim }}"
+  no_log: true
+  changed_when: true
+  when:
+    - ansible_os_family == "RedHat"
+    - vnc_pw_stat.stat.exists | default(false)
+  tags: [mesen, vnc]
+
+- name: Restore SELinux context on ~/.vnc when enforcing
+  ansible.builtin.command:
+    cmd: restorecon -RFv {{ ansible_env.HOME }}/.vnc
+  register: vnc_restorecon
+  changed_when: "'Relabeled' in (vnc_restorecon.stdout | default(''))"
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Enable lingering so PipeWire runs without an SSH login
+  ansible.builtin.command:
+    cmd: loginctl enable-linger {{ ansible_user_id }}
+    creates: "/var/lib/systemd/linger/{{ ansible_user_id }}"
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Ensure the user systemd manager is running
+  ansible.builtin.systemd:
+    name: "user@{{ ansible_user_uid }}.service"
+    state: started
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Enable and start PipeWire and the Mesen sink
+  ansible.builtin.shell: |
+    set -euo pipefail
+    uid=$(id -u)
+    export XDG_RUNTIME_DIR="/run/user/${uid}"
+    for _ in $(seq 1 25); do
+      if [[ -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+        break
+      fi
+      sleep 0.2
+    done
+    if [[ ! -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+      echo "user bus missing at ${XDG_RUNTIME_DIR}/bus" >&2
+      exit 1
+    fi
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+    systemctl --user daemon-reload
+    enable_out=$(systemctl --user enable \
+      pipewire.socket \
+      pipewire.service \
+      pipewire-pulse.socket \
+      pipewire-pulse.service \
+      wireplumber.service \
+      mesen-audio.service 2>&1 || true)
+    systemctl --user start \
+      pipewire.socket \
+      pipewire.service \
+      pipewire-pulse.socket \
+      pipewire-pulse.service \
+      wireplumber.service \
+      mesen-audio.service
+    printf '%s\n' "${enable_out}"
+    systemctl --user --no-pager --full is-active \
+      pipewire.service \
+      pipewire-pulse.service \
+      wireplumber.service \
+      mesen-audio.service
+  args:
+    executable: /bin/bash
+  register: mesen_audio_units
+  changed_when: "'Created symlink' in (mesen_audio_units.stdout | default(''))"
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Confirm the Mesen PulseAudio sink
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+    pactl info
+    echo "DEFAULT_SINK=$(pactl get-default-sink)"
+  args:
+    executable: /bin/bash
+  register: mesen_pactl
+  changed_when: false
+  failed_when: >-
+    'PipeWire' not in (mesen_pactl.stdout | default(''))
+    or ('DEFAULT_SINK=' ~ mesen_audio_sink) not in (mesen_pactl.stdout | default(''))
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc, audio]
+
+- name: Show PipeWire sink status
+  ansible.builtin.debug:
+    var: mesen_pactl.stdout_lines
+  when:
+    - ansible_os_family == "RedHat"
+    - mesen_pactl is defined
+  tags: [mesen, vnc, audio]
+
+- name: Enable and start TigerVNC on display {{ vnc_display }}
+  ansible.builtin.systemd:
+    name: "vncserver@{{ vnc_display }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]
+
+- name: Report VNC endpoint
+  ansible.builtin.debug:
+    msg: >-
+      TigerVNC display {{ vnc_display }} listens on 127.0.0.1:{{ vnc_port }}
+      only. Tunnel from your machine, then connect to vnc://127.0.0.1:{{ vnc_port }}:
+      ssh -i {{ ansible_ssh_private_key_file | default('~/.ssh/neo-atari.pem') }}
+      -L {{ vnc_port }}:127.0.0.1:{{ vnc_port }}
+      {{ ansible_user }}@{{ ansible_host | default(inventory_hostname) }}.
+      Password file on controller: {{ vnc_password_file }}.
+      Inside the session, launch Mesen with mesen-flatpak
+      (software video; PipeWire pulse sink {{ mesen_audio_sink }}
+      when the sound server is up, otherwise silent). Keymap DB:
+      ~/.var/app/{{ mesen_flatpak_id }}/config/mesen/mesen.sqlite3
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, vnc]

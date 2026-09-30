@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+terraform.tfvars
+*.auto.tfvars
+
+# Ansible
+*.retry
+
+# Generated AWS inventory (public IP + local PEM path). Keep aws.yml.j2 tracked.
+ansible/inventory/aws.yml
+
+# NES ROMs (keep only the directory marker)
+roms/*
+!roms/.gitkeep
+
+# Local/editor/OS junk
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

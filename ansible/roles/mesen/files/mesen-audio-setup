@@ -1,0 +1,85 @@
+#!/bin/bash
+# Make sure the VNC user has a PipeWire pulse socket and a default sink named
+# "mesen". EC2 has no sound card. pipewire-pulse already loads
+# module-always-sink (auto_null); this adds a stable sink the Mac can record
+# (mesen.monitor) and that SDL can open without the old empty-device crash.
+set -euo pipefail
+
+uid=$(id -u)
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+fi
+
+if command -v systemctl >/dev/null 2>&1 && [[ -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+  systemctl --user start \
+    pipewire.socket \
+    pipewire.service \
+    pipewire-pulse.socket \
+    pipewire-pulse.service \
+    wireplumber.service \
+    >/dev/null 2>&1 || true
+fi
+
+if ! command -v pactl >/dev/null 2>&1; then
+  echo "mesen-audio-setup: pactl not found (install pulseaudio-utils)" >&2
+  exit 1
+fi
+
+ready=0
+for _ in $(seq 1 25); do
+  if pactl info >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 0.2
+done
+if [[ "${ready}" -ne 1 ]]; then
+  echo "mesen-audio-setup: PipeWire pulse server did not answer on ${XDG_RUNTIME_DIR}/pulse/native" >&2
+  exit 1
+fi
+
+# Two launches (Mesen and the Mac capture) can race. A duplicate load is
+# fine as long as one sink named mesen remains.
+if ! pactl list short sinks | awk '{print $2}' | grep -qxF mesen; then
+  pactl load-module module-null-sink \
+    sink_name=mesen \
+    sink_properties=device.description=Mesen \
+    >/dev/null 2>&1 || true
+fi
+if ! pactl list short sinks | awk '{print $2}' | grep -qxF mesen; then
+  if command -v pw-cli >/dev/null 2>&1; then
+    pw-cli create-node adapter \
+      '{ factory.name=support.null-audio-sink node.name=mesen node.description=Mesen media.class=Audio/Sink object.linger=true audio.position=[ FL FR ] }' \
+      >/dev/null 2>&1 || true
+  fi
+fi
+if ! pactl list short sinks | awk '{print $2}' | grep -qxF mesen; then
+  echo "mesen-audio-setup: could not create sink mesen" >&2
+  exit 1
+fi
+pactl set-default-sink mesen
+
+# Flatpak --socket=pulseaudio expects these host-side links:
+#   $XDG_RUNTIME_DIR/flatpak/pulse -> ../pulse
+#   $XDG_RUNTIME_DIR/.flatpak/<app>/xdg-run/pulse -> ../../flatpak/pulse
+# Without them the sandbox probe can miss the PipeWire pulse socket.
+mkdir -p "${XDG_RUNTIME_DIR}/flatpak"
+ln -sfn ../pulse "${XDG_RUNTIME_DIR}/flatpak/pulse"
+app_xdg="${XDG_RUNTIME_DIR}/.flatpak/ca.mesen.Mesen2/xdg-run"
+if [[ -d "${app_xdg}" ]]; then
+  ln -sfn ../../flatpak/pulse "${app_xdg}/pulse"
+fi
+
+monitor=0
+for _ in $(seq 1 25); do
+  if pactl list short sources | awk '{print $2}' | grep -qxF mesen.monitor; then
+    monitor=1
+    break
+  fi
+  sleep 0.2
+done
+if [[ "${monitor}" -ne 1 ]]; then
+  echo "mesen-audio-setup: sink mesen has no monitor source" >&2
+  exit 1
+fi

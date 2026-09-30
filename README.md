@@ -7,7 +7,7 @@ Modeled on `atari-keyboard` (Stella / Pac-Man). Emulator rename: Stella → **Me
 ## Status (scaffold)
 
 - **Local (macOS):** project layout, `nes_kickoff` CLI (`play` / `configure` / `apply`), ROM under `roms/` (gitignored), WASD/arrows/A/B/Start/Select keymap **stub**, smoke test.
-- **Mesen install:** still downloading on this Mac — not required for scaffold. Smoke test PASSes on ROM alone and WARNs if `mesen` is missing. Prefer naming `mesen` / `Mesen.app` / `MesenCE.app`.
+- **Mesen install:** `/Applications/Mesen.app` is present (arm64); `mesen` is not yet on PATH — symlink via configure or `ln -sfn … ~/.local/bin/mesen`. Smoke test finds the app bundle. Keymap apply remains stubbed until settings format is confirmed.
 - **AWS:** Terraform local-ready (`enable_aws=false` by default). Same shape as atari-keyboard: us-east-2, cheap `t3.small`, VNC on 127.0.0.1 via SSH tunnel only, sshd hardening, PipeWire remote audio. Reuses **`neo-atari`** key pair + `~/.ssh/neo-atari.pem` unless you create a dedicated NES key later.
 - **Do not** `terraform apply` / spend AWS money until you intentionally flip `enable_aws` and review tfvars. **Do not** push to GitHub unless asked.
 

@@ -28,9 +28,15 @@ terraform.tfvars
 # Generated AWS inventory (public IP + local PEM path). Keep aws.yml.j2 tracked.
 ansible/inventory/aws.yml
 
-# NES ROMs (keep only the directory marker)
+# NES / GB / SNES / GBA ROMs (keep only the directory marker)
 roms/*
 !roms/.gitkeep
+
+# Secrets / credentials (never commit)
+*.pem
+*vnc-password*
+vnc-password.txt
+**/vnc-password.txt
 
 # Local/editor/OS junk
 .DS_Store

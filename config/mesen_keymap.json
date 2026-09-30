@@ -1,7 +1,29 @@
 {
-  "emulator": "Mesen",
+  "emulator": "MesenCE",
   "controller": 1,
-  "note": "Stub mapping for Super Mario Bros. Apply script writes this into Mesen settings once the install is present. Flatpak id ca.mesen.Mesen2 is a community placeholder (not on Flathub); prefer GitHub release binaries / AppImage on Linux.",
+  "settings_path_macos": "~/Library/Application Support/MesenCE/settings.json",
+  "settings_path_linux": "~/.config/MesenCE/settings.json",
+  "note": "Avalonia.Input.Key integers written into Nes.Port1 Mapping2/Mapping3. Mapping1 (gamepad) is left alone.",
+  "mappings": {
+    "Mapping2": {
+      "Up": {"key": "W", "code": 66},
+      "Down": {"key": "S", "code": 62},
+      "Left": {"key": "A", "code": 44},
+      "Right": {"key": "D", "code": 47},
+      "A": {"key": "X", "code": 67},
+      "B": {"key": "Z", "code": 69},
+      "Start": {"key": "Enter", "code": 6},
+      "Select": {"key": "LeftShift", "code": 116}
+    },
+    "Mapping3": {
+      "Up": {"key": "Up", "code": 24},
+      "Down": {"key": "Down", "code": 26},
+      "Left": {"key": "Left", "code": 23},
+      "Right": {"key": "Right", "code": 25},
+      "A": {"key": "Space", "code": 18},
+      "Select": {"key": "Tab", "code": 3}
+    }
+  },
   "bindings": [
     {"action": "Up", "keys": ["W", "Up"]},
     {"action": "Down", "keys": ["S", "Down"]},

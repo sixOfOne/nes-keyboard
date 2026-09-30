@@ -18,3 +18,6 @@ vnc_session_name: metacity-mesen
 mesen_audio_sink: mesen
 # Password lives only on the Ansible controller (Mac), never in the repo.
 vnc_password_file: "{{ lookup('env', 'HOME') }}/.config/nes-kickoff/vnc-password.txt"
+
+# nesdev-org/MesenCE GitHub release tag for Amazon Linux x64 zip install.
+mesen_release_tag: "2.2.1"

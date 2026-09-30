@@ -94,7 +94,8 @@ resource "aws_instance" "mesen" {
   vpc_security_group_ids = [aws_security_group.mesen[0].id]
 
   root_block_device {
-    volume_size = 8
+    # Desktop stack + MesenCE zip + native deps need more than 8 GB.
+    volume_size = 20
     volume_type = "gp3"
   }
 

@@ -6,8 +6,8 @@ Modeled on `atari-keyboard` (Stella / Pac-Man). Emulator rename: Stella → **Me
 
 ## Status (scaffold)
 
-- **Local (macOS):** project layout, `nes_kickoff` CLI (`play` / `configure` / `apply`), ROM under `roms/` (gitignored), WASD/arrows/A/B/Start/Select keymap **stub**, smoke test.
-- **Mesen install:** `/Applications/Mesen.app` is present (arm64); `mesen` is not yet on PATH — symlink via configure or `ln -sfn … ~/.local/bin/mesen`. Smoke test finds the app bundle. Keymap apply remains stubbed until settings format is confirmed.
+- **Local (macOS):** project layout, `nes_kickoff` CLI (`play` / `configure` / `apply`), ROM under `roms/` (gitignored), WASD/arrows/A/B/Start/Select keymap applied into MesenCE `settings.json`, smoke test.
+- **Mesen install:** `/Applications/Mesen.app` (arm64 MesenCE 2.2.1) + `~/.local/bin/mesen` symlink. Keymap writes `~/Library/Application Support/MesenCE/settings.json` (Mapping2/Mapping3 Avalonia key codes).
 - **AWS:** Terraform local-ready (`enable_aws=false` by default). Same shape as atari-keyboard: us-east-2, cheap `t3.small`, VNC on 127.0.0.1 via SSH tunnel only, sshd hardening, PipeWire remote audio. Reuses **`neo-atari`** key pair + `~/.ssh/neo-atari.pem` unless you create a dedicated NES key later.
 - **Do not** `terraform apply` / spend AWS money until you intentionally flip `enable_aws` and review tfvars. **Do not** push to GitHub unless asked.
 
@@ -16,7 +16,7 @@ Modeled on `atari-keyboard` (Stella / Pac-Man). Emulator rename: Stella → **Me
 ```
 config/           keymap intent + mesen_keymap.json stub + games.yaml
 roms/             local ROMs only (gitignored; keep .gitkeep)
-scripts/          smoke_test, apply_mesen_keymap (stub), render_aws_inventory
+scripts/          smoke_test, apply_mesen_keymap, render_aws_inventory
 src/nes_kickoff   CLI entrypoint
 ansible/          localhost + aws inventories, sshd + mesen roles
 terraform/        local marker by default; EC2 when enable_aws=true
@@ -28,7 +28,7 @@ terraform/        local marker by default; EC2 when enable_aws=true
    `ln -sfn /Applications/Mesen.app/Contents/MacOS/Mesen ~/.local/bin/mesen`
    (or `MesenCE.app` if that is the bundle name).
 2. ROM is already at `roms/Super_Mario_Bros.nes` and listed in `config/games.yaml` (gitignored).
-3. Keymap stub (safe before Mesen lands):
+3. Apply keymap (quit Mesen first if it is open):
    `python3 scripts/apply_mesen_keymap.py`
 4. Smoke check (ROM required; Mesen optional until installed):
    `python3 scripts/smoke_test.py`
@@ -117,11 +117,11 @@ PYTHONPATH=src python3 -m nes_kickoff <command>
 | Enter | Start |
 | Shift / Tab | Select |
 
-See `config/keymap.yaml` and `config/mesen_keymap.json`. Apply script is stubbed until Mesen settings format is confirmed for the installed build.
+See `config/keymap.yaml` and `config/mesen_keymap.json`. Apply writes Avalonia key codes into `Nes.Port1` Mapping2 (WASD+X/Z/Enter/Shift) and Mapping3 (arrows+Space/Tab) in `~/Library/Application Support/MesenCE/settings.json` (Linux: `~/.config/MesenCE/settings.json`).
 
 ## Costs / teardown
 
-- Default AWS shape: `t3.small` + 8 GB gp3 in us-east-2. Stop or destroy when idle.
+- Default AWS shape: `t3.small` + 20 GB gp3 in us-east-2. Stop or destroy when idle.
 - Tear down: `cd terraform && terraform destroy` (or set `enable_aws=false` and apply carefully).
 - Local Mesen/ROMs are unaffected by destroy.
 - **SG description is immutable** in AWS — do not casually edit `aws_security_group.mesen` description after first create.

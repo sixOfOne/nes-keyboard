@@ -61,9 +61,9 @@
   when: ansible_os_family == "Darwin"
   tags: [mesen, keymap]
 
-- name: Ensure Mesen settings directory exists (macOS)
+- name: Ensure MesenCE settings directory exists (macOS)
   ansible.builtin.file:
-    path: "{{ ansible_env.HOME }}/Library/Application Support/Mesen"
+    path: "{{ ansible_env.HOME }}/Library/Application Support/MesenCE"
     state: directory
     mode: "0755"
   when: ansible_os_family == "Darwin"
@@ -91,13 +91,20 @@
     name:
       - tar
       - gzip
+      - unzip
+      - curl
       - which
       - libX11
       - libXext
       - libXrandr
       - libXcursor
+      - libXi
+      - libXinerama
       - mesa-libGL
+      - mesa-libGLU
       - alsa-lib
+      - fontconfig
+      - freetype
       - python3
     state: present
   become: true
@@ -112,41 +119,55 @@
   when: ansible_os_family == "RedHat"
   tags: [mesen, install]
 
-- name: Install Mesen via package manager when available (Linux)
-  ansible.builtin.dnf:
-    name: mesen
-    state: present
+- name: Install MesenCE from GitHub release (Linux x64 zip)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ver="{{ mesen_release_tag }}"
+    url="https://github.com/nesdev-org/MesenCE/releases/download/${ver}/Mesen_${ver}_Linux_x64.zip"
+    dest="/usr/local/lib/mesen"
+    bin="/usr/local/bin/mesen"
+    if [[ -x "${bin}" ]]; then
+      echo "mesen already at ${bin}"
+      exit 0
+    fi
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "${tmp}"' EXIT
+    curl -fsSL -o "${tmp}/mesen.zip" "${url}"
+    mkdir -p "${dest}"
+    unzip -o "${tmp}/mesen.zip" -d "${dest}"
+    chmod 755 "${dest}/Mesen"
+    ln -sfn "${dest}/Mesen" "${bin}"
+    # Extract native deps next to the binary on first run by invoking --help briefly
+    # (MesenCE copies dylibs into ~/.config/MesenCE). Ignore non-zero if headless.
+    "${bin}" --help >/dev/null 2>&1 || true
+    echo "installed ${bin} from ${url}"
+  args:
+    executable: /bin/bash
   become: true
-  register: mesen_pkg
+  register: mesen_github_install
+  changed_when: "'installed' in (mesen_github_install.stdout | default(''))"
+  when:
+    - ansible_os_family == "RedHat"
+    - mesen_which.rc != 0
+  tags: [mesen, install]
+
+- name: Re-check mesen on PATH after GitHub install (Linux)
+  ansible.builtin.command: which mesen
+  register: mesen_which_after
+  changed_when: false
   failed_when: false
-  when:
-    - ansible_os_family == "RedHat"
-    - mesen_which.rc != 0
+  when: ansible_os_family == "RedHat"
   tags: [mesen, install]
 
-- name: Report Mesen package install status (Linux)
-  ansible.builtin.debug:
+- name: Fail clearly when Mesen is still missing (Linux)
+  ansible.builtin.fail:
     msg: >-
-      Mesen package result: {{ mesen_pkg.msg | default(mesen_pkg.rc | default('ok')) }}.
-      No official Flathub package. Prefer a GitHub release binary or AppImage
-      from https://github.com/nesdev-org/MesenCE/releases (place as /usr/local/bin/mesen).
-      Community Flatpak id placeholder: {{ mesen_flatpak_id }} (joshas/Mesen2-flatpak; not on Flathub).
+      mesen not on PATH after GitHub release install.
+      Check https://github.com/nesdev-org/MesenCE/releases for
+      Mesen_{{ mesen_release_tag }}_Linux_x64.zip and re-run configure.
   when:
     - ansible_os_family == "RedHat"
-    - mesen_pkg is defined
-  tags: [mesen, install]
-
-# Flatpak install is intentionally NOT automated: ca.mesen.Mesen2 is not on
-# Flathub. mesen-flatpak wrapper remains for when a local/custom Flatpak build
-# is installed, or when a binary is wrapped similarly.
-- name: Note Mesen install path when still missing (Linux)
-  ansible.builtin.debug:
-    msg: >-
-      mesen not on PATH after dnf attempt. Install MesenCE manually on this
-      host, then re-run configure. VNC / PipeWire / sshd tasks still proceed.
-  when:
-    - ansible_os_family == "RedHat"
-    - mesen_which.rc != 0
+    - (mesen_which_after.rc | default(1)) != 0
   tags: [mesen, install]
 
 - name: Ensure remote config directory exists (Linux)
@@ -189,32 +210,36 @@
   when: ansible_os_family == "RedHat"
   tags: [mesen, keymap]
 
-- name: Apply Mesen joystick keymap into Flatpak settings (Linux)
+- name: Ensure MesenCE settings directory exists (Linux)
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.config/MesenCE"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == "RedHat"
+  tags: [mesen, keymap]
+
+- name: Apply Mesen keyboard keymap into ~/.config/MesenCE (Linux)
   ansible.builtin.command:
     cmd: >-
       python3 {{ ansible_env.HOME }}/.config/nes-kickoff/apply_mesen_keymap.py
-      --target flatpak
-      --flatpak-id {{ mesen_flatpak_id }}
+      --target linux
       --json {{ ansible_env.HOME }}/.config/nes-kickoff/mesen_keymap.json
   register: keymap_apply_linux
   changed_when: >-
     ('PASS: wrote keymap' in (keymap_apply_linux.stdout | default('')))
-    and ('STUB:' not in (keymap_apply_linux.stdout | default('')))
   when: ansible_os_family == "RedHat"
   tags: [mesen, keymap]
 
-- name: Restore SELinux context on Flatpak Mesen config (Linux)
+- name: Restore SELinux context on MesenCE config (Linux)
   ansible.builtin.command:
-    cmd: >-
-      restorecon -RFv
-      {{ ansible_env.HOME }}/.var/app/{{ mesen_flatpak_id }}/config/mesen
+    cmd: restorecon -RFv {{ ansible_env.HOME }}/.config/MesenCE
   register: mesen_restorecon
   changed_when: "'Relabeled' in (mesen_restorecon.stdout | default(''))"
   failed_when: false
   when: ansible_os_family == "RedHat"
   tags: [mesen, keymap]
 
-- name: Show Flatpak keymap apply result (Linux)
+- name: Show Linux keymap apply result
   ansible.builtin.debug:
     var: keymap_apply_linux.stdout_lines
   when:
@@ -552,7 +577,7 @@
       Password file on controller: {{ vnc_password_file }}.
       Inside the session, launch Mesen with mesen-flatpak
       (software video; PipeWire pulse sink {{ mesen_audio_sink }}
-      when the sound server is up, otherwise silent). Keymap DB:
-      ~/.var/app/{{ mesen_flatpak_id }}/config/mesen/mesen.sqlite3
+      when the sound server is up, otherwise silent). Keymap:
+      ~/.config/MesenCE/settings.json
   when: ansible_os_family == "RedHat"
   tags: [mesen, vnc]

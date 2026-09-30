@@ -16,3 +16,6 @@ games:
   # - name: Example GBA
   #   system: gba
   #   rom: roms/example.gba
+  - name: Fall of the Foot Clan
+    system: gb
+    rom: roms/Teenage Mutant Ninja Turtles - Fall of the Foot Clan (USA).gb
